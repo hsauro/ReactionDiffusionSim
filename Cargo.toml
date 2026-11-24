@@ -1,0 +1,38 @@
+[package]
+name = "rddemo"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "2D reaction-diffusion simulator for teaching (Rust + egui, runs in the browser)"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+egui = "0.37"
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }
+egui_plot = "0.38"
+log = "0.4"
+web-time = "1"
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11"
+
+# web:
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Window", "Location", "Document", "Element", "HtmlCanvasElement"] }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
+
+# Keep native debug builds usable for interactive testing:
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[lints.rust]
+unsafe_code = "deny"

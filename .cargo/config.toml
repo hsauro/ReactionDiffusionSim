@@ -1,0 +1,4 @@
+# WebAssembly SIMD lets the compiler vectorise the time step.
+# Supported by current Chrome, Firefox and Safari (16.4+).
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
