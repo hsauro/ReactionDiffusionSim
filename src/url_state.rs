@@ -1,6 +1,7 @@
 //! The control state that can be shared as a URL fragment, and its encoding,
-//! e.g. `m=brusselator&p=spots&a=3&b=6&Du=4&Dv=32&speed=10&N=200&bc=noflux&view=u`.
+//! e.g. `m=brusselator&p=spots&a=3&b=6&Du=4&Dv=32&speed=10&N=200&bc=noflux&view=u&cmap=viridis`.
 
+use crate::colormap::Colormap;
 use crate::sim::{Boundary, Model as _, ModelKind, View};
 use crate::with_model;
 
@@ -18,11 +19,12 @@ pub struct Settings {
     pub n: usize,
     pub boundary: Boundary,
     pub view: View,
+    pub colormap: Colormap,
 }
 
 impl Settings {
-    /// The settings a preset sets, keeping grid size and view.
-    pub fn from_preset(model: ModelKind, preset: usize, n: usize, view: View) -> Self {
+    /// The settings a preset sets, keeping grid size, view and colours.
+    pub fn from_preset(model: ModelKind, preset: usize, n: usize, view: View, colormap: Colormap) -> Self {
         with_model!(model, m => {
             let ps = &m.presets()[preset];
             Self {
@@ -35,6 +37,7 @@ impl Settings {
                 n,
                 boundary: ps.boundary,
                 view,
+                colormap,
             }
         })
     }
@@ -46,13 +49,14 @@ impl Settings {
                 s += &format!("&{}={}", spec.key, v);
             }
             s += &format!(
-                "&Du={}&Dv={}&speed={}&N={}&bc={}&view={}",
+                "&Du={}&Dv={}&speed={}&N={}&bc={}&view={}&cmap={}",
                 self.du,
                 self.dv,
                 self.speed,
                 self.n,
                 self.boundary.key(),
-                self.view.key()
+                self.view.key(),
+                self.colormap.key()
             );
             s
         })
@@ -79,12 +83,13 @@ impl Settings {
             .filter(|n| GRID_SIZES.contains(n))
             .unwrap_or(200);
         let view = get("view").and_then(View::from_key).unwrap_or(View::U);
+        let colormap = get("cmap").and_then(Colormap::from_key).unwrap_or(Colormap::Viridis);
 
         with_model!(model, m => {
             let preset = get("p")
                 .and_then(|key| m.presets().iter().position(|p| p.key == key))
                 .unwrap_or(0);
-            let mut s = Self::from_preset(model, preset, n, view);
+            let mut s = Self::from_preset(model, preset, n, view, colormap);
             for (i, spec) in m.params().iter().enumerate() {
                 if let Some(x) = num(spec.key).filter(|&x| x >= spec.min && x <= spec.max) {
                     s.params[i] = x;
@@ -116,7 +121,7 @@ mod tests {
         for model in ModelKind::ALL {
             let count = with_model!(model, m => m.presets().len());
             for preset in 0..count {
-                let mut s = Settings::from_preset(model, preset, 300, View::V);
+                let mut s = Settings::from_preset(model, preset, 300, View::V, Colormap::Magma);
                 s.speed *= 1.7;
                 s.du *= 1.1;
                 s.boundary = Boundary::Periodic;
@@ -129,9 +134,9 @@ mod tests {
     #[test]
     fn invalid_keys_fall_back() {
         let s = Settings::decode("#m=brusselator&p=nonsense&b=abc&a=1e9&N=17&zzz=1&bc=x");
-        assert_eq!(s, Settings::from_preset(ModelKind::Brusselator, 0, 200, View::U));
+        assert_eq!(s, Settings::from_preset(ModelKind::Brusselator, 0, 200, View::U, Colormap::Viridis));
         let s = Settings::decode("");
-        assert_eq!(s, Settings::from_preset(ModelKind::Brusselator, 0, 200, View::U));
+        assert_eq!(s, Settings::from_preset(ModelKind::Brusselator, 0, 200, View::U, Colormap::Viridis));
     }
 
     #[test]

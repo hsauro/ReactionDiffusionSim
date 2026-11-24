@@ -6,6 +6,7 @@ use egui::{Color32, ColorImage, Pos2, Rect, Sense, Stroke, TextureHandle, Textur
 use egui_plot::{HLine, Legend, Line, Plot, PlotPoints, VLine};
 use web_time::Instant;
 
+use crate::colormap::Colormap;
 use crate::sim::model::steady_state_at;
 use crate::sim::{self, grid, stability, Boundary, Grid, Model as _, ModelKind, Rng, View};
 use crate::url_state::{Settings, GRID_SIZES};
@@ -39,6 +40,9 @@ pub struct RdApp {
 
     texture: Option<TextureHandle>,
     lut: [Color32; 256],
+    /// Scheme `lut` was built for.
+    lut_cmap: Colormap,
+    show_about: bool,
     auto_scale: bool,
     range_u: (f32, f32),
     range_v: (f32, f32),
@@ -67,6 +71,7 @@ impl RdApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let s = Settings::decode(&initial_fragment());
         let n = s.n;
+        let cmap = s.colormap;
         let mut app = Self {
             grid: Grid::new(n, s.boundary),
             s,
@@ -76,7 +81,9 @@ impl RdApp {
             pending: 0.0,
             unstable: false,
             texture: None,
-            lut: viridis_lut(),
+            lut: lut_for(cmap),
+            lut_cmap: cmap,
+            show_about: false,
             auto_scale: false,
             range_u: (0.0, 1.0),
             range_v: (0.0, 1.0),
@@ -106,7 +113,7 @@ impl RdApp {
     fn apply_preset(&mut self, model: ModelKind, preset: usize) {
         let speed = self.s.speed;
         let same_model = model == self.s.model;
-        self.s = Settings::from_preset(model, preset, self.s.n, self.s.view);
+        self.s = Settings::from_preset(model, preset, self.s.n, self.s.view, self.s.colormap);
         if same_model {
             self.s.speed = speed;
         }
@@ -343,7 +350,14 @@ impl RdApp {
     }
 
     fn controls(&mut self, ui: &mut egui::Ui) {
-        ui.heading("RDDemo");
+        ui.horizontal(|ui| {
+            ui.heading("RDDemo");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("About").on_hover_text("What the models are and how to use this").clicked() {
+                    self.show_about = !self.show_about;
+                }
+            });
+        });
         ui.label("Reaction\u{2013}diffusion on a 2D grid");
         ui.separator();
 
@@ -533,6 +547,13 @@ impl RdApp {
             .show_ui(ui, |ui| {
                 for v in View::ALL {
                     ui.selectable_value(&mut self.s.view, v, view_name(v));
+                }
+            });
+        egui::ComboBox::from_label("Colours")
+            .selected_text(self.s.colormap.label())
+            .show_ui(ui, |ui| {
+                for c in Colormap::ALL {
+                    ui.selectable_value(&mut self.s.colormap, c, c.label());
                 }
             });
         ui.checkbox(&mut self.auto_scale, "Auto scale");
@@ -823,6 +844,11 @@ impl eframe::App for RdApp {
             }
         }
 
+        if self.lut_cmap != self.s.colormap {
+            self.lut = lut_for(self.s.colormap);
+            self.lut_cmap = self.s.colormap;
+        }
+
         // Simulate.
         if self.running && !self.unstable {
             let done = self.simulate(self.s.speed as f64 * frame_dt);
@@ -845,6 +871,7 @@ impl eframe::App for RdApp {
             });
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
         egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
+        crate::about::show(ui.ctx(), &mut self.show_about, self.s.model);
 
         if self.running || self.message.is_some() {
             ui.ctx().request_repaint();
@@ -873,29 +900,7 @@ fn initial_fragment() -> String {
     }
 }
 
-/// Viridis colour map (polynomial fit), 256 entries.
-fn viridis_lut() -> [Color32; 256] {
-    const C: [[f32; 3]; 7] = [
-        [0.277_727_33, 0.005_407_344_5, 0.334_099_8],
-        [0.105_093_04, 1.404_613_5, 1.384_590_2],
-        [-0.330_861_83, 0.214_847_56, 0.095_095_16],
-        [-4.634_230_5, -5.799_101, -19.332_441],
-        [6.228_27, 14.179_933, 56.690_55],
-        [4.776_385, -13.745_145, -65.353_03],
-        [-5.435_456, 4.645_852_6, 26.312_435],
-    ];
-    let mut lut = [Color32::BLACK; 256];
-    for (i, c) in lut.iter_mut().enumerate() {
-        let t = i as f32 / 255.0;
-        let mut rgb = [0u8; 3];
-        for (ch, out) in rgb.iter_mut().enumerate() {
-            let mut x = C[6][ch];
-            for k in (0..6).rev() {
-                x = C[k][ch] + t * x;
-            }
-            *out = (x.clamp(0.0, 1.0) * 255.0).round() as u8;
-        }
-        *c = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
-    }
-    lut
+/// The colour table for a scheme, as egui colours.
+fn lut_for(c: Colormap) -> [Color32; 256] {
+    c.table().map(|[r, g, b]| Color32::from_rgb(r, g, b))
 }
